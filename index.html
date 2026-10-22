@@ -2,7 +2,7 @@
 <html lang="fa">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Love Heart</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -16,6 +16,8 @@
   canvas {
     display: block;
     background: #060208;
+    width: 100%;
+    height: 100%;
   }
 </style>
 </head>
@@ -26,14 +28,15 @@
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
-const SC = 21;
-const OY = 20;
+let baseSC = 21;
+let SC = baseSC;
+let OY = 20;
 const DURATION = 10;
 const TICK = 16;
 const ANIM = 42;
-const LIFT = 34;
-const GAP = 7;
-const SIZES = [9, 10, 11, 12];
+let LIFT = 34;
+let GAP = 7;
+let SIZES = [9, 10, 11, 12];
 const BG = '#060208';
 const BGC = [6/255, 2/255, 8/255];
 const FLASH = [1.0, 0.78, 0.78];
@@ -46,7 +49,7 @@ const PHRASES = [
   "ฉันรักเธอ", "Anh yêu em", "Aku cinta kamu", "Я тебе кохаю"
 ];
 
-let W, H, CX, CY;
+let W, H, CX, CY, dpr;
 let active = [];
 let mainItems = [];
 let spawning = true;
@@ -64,16 +67,28 @@ function mulberry32(a) {
   };
 }
 
+function updateScales() {
+  const minDim = Math.min(window.innerWidth, window.innerHeight);
+  // تنظیم خودکار مقیاس براساس عرض صفحه گوشی
+  const scaleFactor = Math.min(1, minDim / 600);
+  
+  SC = baseSC * scaleFactor;
+  OY = 20 * scaleFactor;
+  LIFT = 34 * scaleFactor;
+  GAP = Math.max(3, 7 * scaleFactor);
+  SIZES = [9, 10, 11, 12].map(s => Math.max(7, Math.round(s * scaleFactor)));
+}
+
 function resize() {
+  dpr = window.devicePixelRatio || 1;
   W = window.innerWidth;
   H = window.innerHeight;
-  canvas.width = W;
-  canvas.height = H;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
   CX = W / 2;
   CY = H / 2;
+  ctx.scale(dpr, dpr);
 }
-window.addEventListener('resize', resize);
-resize();
 
 function heart(a) {
   const x = 16 * Math.pow(Math.sin(a), 3);
@@ -81,12 +96,16 @@ function heart(a) {
   return [x * SC, y * SC + OY];
 }
 
-const POLY = [];
-for (let i = 0; i < 720; i++) POLY.push(heart(2 * Math.PI * i / 720));
-const EDGES = POLY.map((p, i) => [p, POLY[(i + 1) % 720]]);
-const YMAX = Math.max(...POLY.map(p => p[1]));
-const YMIN = Math.min(...POLY.map(p => p[1]));
-const HEART_CY = (YMAX + YMIN) / 2;
+let POLY, EDGES, YMAX, YMIN, HEART_CY;
+
+function initHeartGeometry() {
+  POLY = [];
+  for (let i = 0; i < 720; i++) POLY.push(heart(2 * Math.PI * i / 720));
+  EDGES = POLY.map((p, i) => [p, POLY[(i + 1) % 720]]);
+  YMAX = Math.max(...POLY.map(p => p[1]));
+  YMIN = Math.min(...POLY.map(p => p[1]));
+  HEART_CY = (YMAX + YMIN) / 2;
+}
 
 function spans(y) {
   const xs = [];
@@ -109,7 +128,7 @@ function intersect(A, B) {
     for (const b of B) {
       const lo = Math.max(a[0], b[0]);
       const hi = Math.min(a[1], b[1]);
-      if (hi - lo > 14) out.push([lo, hi]);
+      if (hi - lo > 10 * (SC / baseSC)) out.push([lo, hi]);
     }
   }
   return out;
@@ -160,7 +179,7 @@ function clamp(v) {
 
 function build() {
   const nextPhrase = phraseCycle();
-  const rowH = 16;
+  const rowH = Math.max(12, 16 * (SC / baseSC));
   const half = rowH / 2;
   const placed = [];
 
@@ -168,9 +187,9 @@ function build() {
   while (y > YMIN + half) {
     const row = intersect(spans(y + half), spans(y - half));
     for (let [lo, hi] of row) {
-      lo += 4;
-      hi -= 4;
-      let cur = lo + rng() * 8;
+      lo += 2;
+      hi -= 2;
+      let cur = lo + rng() * 4;
       const line = [];
 
       while (true) {
@@ -244,7 +263,7 @@ function build() {
 
 function spawn(p) {
   p.f = 0;
-  p.dx = (rng() - 0.5) * 20;
+  p.dx = (rng() - 0.5) * 20 * (SC / baseSC);
   active.push(p);
   mainItems.push(p);
 }
@@ -267,11 +286,11 @@ function animate(p) {
   ctx.font = `bold ${p.size}px Arial`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(p.text, px + 2, py + 3);
+  ctx.fillText(p.text, px + 1.5, py + 2);
 
   // هاله
   ctx.fillStyle = hx(mix(BGC, dim(c, 0.20), e * e));
-  ctx.font = `bold ${p.size + 1}px Arial`;
+  ctx.font = `bold ${p.size + 0.5}px Arial`;
   ctx.fillText(p.text, px, py);
 
   // متن اصلی با فلش
@@ -293,8 +312,8 @@ function drawStatic() {
   for (const p of mainItems) {
     if (p.f < ANIM) continue;
     const c = p.color;
-    const x = p.finalX;
-    const y = p.finalY;
+    const x = CX + p.x;
+    const y = CY - p.y;
 
     ctx.fillStyle = hx(dim(c, 0.25));
     ctx.font = `bold ${p.size}px Arial`;
@@ -339,8 +358,8 @@ function step(now) {
   // رسم shimmer
   for (const p of mainItems) {
     if (p.shimmerUntil && now < p.shimmerUntil) {
-      const x = p.finalX;
-      const y = p.finalY;
+      const x = CX + p.x;
+      const y = CY - p.y;
       const col = mix(p.color, FLASH, 0.6);
       ctx.fillStyle = hx(col);
       ctx.font = `bold ${p.size}px Arial`;
@@ -353,7 +372,15 @@ function step(now) {
   requestAnimationFrame(step);
 }
 
+window.addEventListener('resize', () => {
+  updateScales();
+  resize();
+});
+
 // شروع
+updateScales();
+resize();
+initHeartGeometry();
 const placed = build();
 items = [...placed];
 RATE = placed.length / (DURATION * 1000 / TICK);
